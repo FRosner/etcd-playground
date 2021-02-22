@@ -1,8 +1,11 @@
 package de.frosner;
 
+import java.net.URI;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.etcd.jetcd.Client;
 import picocli.CommandLine;
 
 @CommandLine.Command(
@@ -20,9 +23,17 @@ public class Start implements Runnable
         System.exit(exitCode);
     }
 
+    @CommandLine.Option(
+            names = { "-e", "--endpoints" },
+            split = ",",
+            defaultValue = "http://localhost:2379"
+    )
+    URI[] endpoints;
+
     @Override
     public void run()
     {
-        logger.info("Bla");
+        logger.info("Connecting to etcd on the following endpoints: {}", endpoints);
+        Client.builder().endpoints(endpoints).build();
     }
 }
