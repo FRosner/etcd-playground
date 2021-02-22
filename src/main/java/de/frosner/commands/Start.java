@@ -1,11 +1,12 @@
-package de.frosner;
+package de.frosner.commands;
 
 import java.net.URI;
+import java.util.Arrays;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import io.etcd.jetcd.Client;
+import de.frosner.server.Node;
 import picocli.CommandLine;
 
 @CommandLine.Command(
@@ -33,7 +34,9 @@ public class Start implements Runnable
     @Override
     public void run()
     {
-        logger.info("Connecting to etcd on the following endpoints: {}", endpoints);
-        Client.builder().endpoints(endpoints).build();
+        try (Node node = new Node(Arrays.asList(endpoints)))
+        {
+            node.join();
+        }
     }
 }
