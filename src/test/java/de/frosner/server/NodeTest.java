@@ -1,22 +1,21 @@
 package de.frosner.server;
 
+import io.etcd.jetcd.test.EtcdClusterExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
-import io.etcd.jetcd.test.EtcdClusterExtension;
+class NodeTest {
 
-class NodeTest
-{
+  @RegisterExtension
+  public static final EtcdClusterExtension etcdCluster = new EtcdClusterExtension(
+      NodeTest.class.getSimpleName(), 1);
 
-    @RegisterExtension
-    public static final EtcdClusterExtension etcdCluster = new EtcdClusterExtension(NodeTest.class.getSimpleName(), 1);
-
-    @Test
-    public void test()
-    {
-        try (Node node = new Node(etcdCluster.getClientEndpoints()))
-        {
-            node.join();
-        }
+  @Test
+  public void test() throws Exception {
+    try (Node node = new Node(etcdCluster.getClientEndpoints())) {
+      node.join();
+      // TODO wait for watcher with awaitility
+      Thread.sleep(1000);
     }
+  }
 }
