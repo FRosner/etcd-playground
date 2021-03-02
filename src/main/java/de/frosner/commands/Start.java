@@ -38,6 +38,8 @@ public class Start implements Runnable {
       logger.error("Failed to start node.", e);
     } catch (LeaveFailedException e) {
       logger.error("Failed to clean up.", e);
+    } catch (Exception e) {
+      e.printStackTrace();
     }
   }
 }
