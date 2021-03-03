@@ -1,8 +1,9 @@
 package de.frosner.server;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 import io.etcd.jetcd.test.EtcdClusterExtension;
+import java.util.List;
+import java.util.Set;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -13,15 +14,23 @@ class NodeTest {
       NodeTest.class.getSimpleName(), 1);
 
   @Test
-  public void testNodeDataInitialLoad() throws Exception {
+  public void testTwoNodesJoinLeave() throws Exception {
     try (Node node1 = new Node(etcdCluster.getClientEndpoints())) {
       node1.join();
       try (Node node2 = new Node(etcdCluster.getClientEndpoints())) {
         node2.join();
-        assertThat(node2.getClusterMembers()).contains(node1.getNodeData());
+
+        Awaitility.await("Node 1 to see all nodes")
+            .until(() -> node1.getClusterMembers()
+                .containsAll(List.of(node1.getNodeData(), node2.getNodeData())));
+        Awaitility.await("Node 2 to see all nodes")
+            .until(() -> node2.getClusterMembers()
+                .containsAll(List.of(node1.getNodeData(), node2.getNodeData())));
       }
-      // TODO wait for watcher with awaitility
-      Thread.sleep(1000);
+      Awaitility.await("Node 1 to see that node 2 is gone")
+          .until(() -> node1.getClusterMembers()
+              .equals(Set.of(node1.getNodeData())));
     }
   }
+
 }
