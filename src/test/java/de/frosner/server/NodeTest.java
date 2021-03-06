@@ -1,5 +1,8 @@
 package de.frosner.server;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import eu.rekawek.toxiproxy.model.ToxicDirection;
 import io.etcd.jetcd.launcher.EtcdContainer;
 import java.net.URI;
 import java.util.List;
@@ -50,6 +53,11 @@ class NodeTest {
 
   private List<URI> getClientEndpoints() {
     return List.of(URI.create(
+        "https://" + etcd.getContainerIpAddress() + ":" + etcd.getMappedPort(ETCD_PORT)));
+  }
+
+  private List<URI> getProxiedClientEndpoints() {
+    return List.of(URI.create(
         "https://" + etcdProxy.getContainerIpAddress() + ":" + etcdProxy.getProxyPort()));
   }
 
@@ -70,6 +78,30 @@ class NodeTest {
       Awaitility.await("Node 1 to see that node 2 is gone")
           .until(() -> node1.getClusterMembers()
               .equals(Set.of(node1.getNodeData())));
+    }
+  }
+
+  @Test
+  public void testTwoNodesLeaseExpires() throws Exception {
+    long leaseTtl = 1;
+    try (Node node1 = new Node(getClientEndpoints(), leaseTtl)) {
+      node1.join();
+      try (Node node2 = new Node(getProxiedClientEndpoints(), leaseTtl)) {
+        node2.join();
+
+        Awaitility.await("Node 1 to see all nodes")
+            .until(() -> node1.getClusterMembers()
+                .containsAll(List.of(node1.getNodeData(), node2.getNodeData())));
+
+        etcdProxy.toxics()
+            .latency("latency", ToxicDirection.UPSTREAM, leaseTtl * 2000);
+
+        Awaitility.await("Node 1 to see that node 2 is gone")
+            .until(() -> node1.getClusterMembers()
+                .equals(Set.of(node1.getNodeData())));
+      } catch (LeaveFailedException e) {
+        assertThat(e).hasStackTraceContaining("requested lease not found");
+      }
     }
   }
 
