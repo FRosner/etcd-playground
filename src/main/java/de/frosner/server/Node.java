@@ -4,11 +4,16 @@ import de.frosner.util.JsonObjectMapper;
 import io.etcd.jetcd.ByteSequence;
 import io.etcd.jetcd.Client;
 import io.etcd.jetcd.KeyValue;
+import io.etcd.jetcd.Lease;
 import io.etcd.jetcd.Watch;
 import io.etcd.jetcd.kv.GetResponse;
+import io.etcd.jetcd.lease.LeaseKeepAliveResponse;
 import io.etcd.jetcd.options.GetOption;
+import io.etcd.jetcd.options.PutOption;
 import io.etcd.jetcd.options.WatchOption;
 import io.etcd.jetcd.shaded.com.google.common.collect.ImmutableSet;
+import io.etcd.jetcd.shaded.io.grpc.stub.StreamObserver;
+import io.etcd.jetcd.support.CloseableClient;
 import io.etcd.jetcd.watch.WatchEvent;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -26,16 +31,25 @@ public class Node implements AutoCloseable {
   private final Logger logger;
 
   private static final int OPERATION_TIMEOUT = 5;
+  private static final long DEFAULT_LEASE_TTL = 5;
   public static final String NODES_PREFIX = "/nodes/";
 
   private final NodeData nodeData;
 
   private final Client etcdClient;
   private Watch.Watcher watcher;
+  private final long leaseTtl;
+  private volatile long leaseId;
+  private volatile CloseableClient keepAliveClient;
 
   private final ConcurrentHashMap<UUID, NodeData> clusterMembers = new ConcurrentHashMap<>();
 
   public Node(List<URI> endpoints) throws Exception {
+    this(endpoints, DEFAULT_LEASE_TTL);
+  }
+
+  public Node(List<URI> endpoints, long leaseTtl) throws Exception {
+    this.leaseTtl = leaseTtl;
     nodeData = new NodeData(UUID.randomUUID());
     logger = LoggerFactory.getLogger(nodeData.getUuid().toString());
     logger.info("Connecting to etcd on the following endpoints: {}", endpoints);
@@ -110,28 +124,63 @@ public class Node implements AutoCloseable {
   public void join() throws JoinFailedException {
     try {
       logger.info("Joining the cluster");
-      // TODO lease
-      etcdClient.getKVClient().put(
-          ByteSequence.from(
-              NODES_PREFIX + nodeData.getUuid(),
-              StandardCharsets.UTF_8
-          ),
-          ByteSequence.from(
-              JsonObjectMapper.INSTANCE.writeValueAsString(nodeData),
-              StandardCharsets.UTF_8
-          )
-      ).get(OPERATION_TIMEOUT, TimeUnit.SECONDS);
+      grantLease();
+      putMetadata();
+      logger.info("Join complete");
     } catch (Exception e) {
       throw new JoinFailedException(nodeData, e);
     }
   }
 
+  private void grantLease() throws Exception {
+    Lease leaseClient = etcdClient.getLeaseClient();
+    logger.info("Granting lease");
+    leaseClient.grant(leaseTtl)
+        .thenAccept((leaseGrantResponse -> {
+          leaseId = leaseGrantResponse.getID();
+          logger.info("Lease {} granted", leaseId);
+          keepAliveClient = leaseClient.keepAlive(leaseId,
+              new StreamObserver<>() {
+                @Override
+                public void onNext(LeaseKeepAliveResponse leaseKeepAliveResponse) {
+                  logger.debug("Kept lease {} alive", leaseId);
+                }
+
+                @Override
+                public void onError(Throwable throwable) {
+                  logger.error("Failed to keep lease {} alive", leaseId);
+                }
+
+                @Override
+                public void onCompleted() {
+                  logger.debug("Lease completed");
+                }
+              });
+        })).get(OPERATION_TIMEOUT, TimeUnit.SECONDS);
+  }
+
+  private void putMetadata() throws Exception {
+    logger.info("Putting node metadata");
+    etcdClient.getKVClient().put(
+        ByteSequence.from(
+            NODES_PREFIX + nodeData.getUuid(),
+            StandardCharsets.UTF_8
+        ),
+        ByteSequence.from(
+            JsonObjectMapper.INSTANCE.writeValueAsString(nodeData),
+            StandardCharsets.UTF_8
+        ),
+        PutOption.newBuilder().withLeaseId(leaseId).build()
+    ).get(OPERATION_TIMEOUT, TimeUnit.SECONDS);
+  }
+
   public void leave() throws LeaveFailedException {
     try {
       logger.info("Leaving the cluster");
-      // TODO lease
-      etcdClient.getKVClient()
-          .delete(ByteSequence.from(NODES_PREFIX + nodeData.getUuid(), StandardCharsets.UTF_8))
+      if (keepAliveClient != null) {
+        keepAliveClient.close();
+      }
+      etcdClient.getLeaseClient().revoke(leaseId)
           .get(OPERATION_TIMEOUT, TimeUnit.SECONDS);
     } catch (Exception e) {
       throw new LeaveFailedException(nodeData, e);
