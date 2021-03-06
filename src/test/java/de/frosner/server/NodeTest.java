@@ -7,6 +7,8 @@ import io.etcd.jetcd.launcher.EtcdContainer;
 import java.net.URI;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -103,6 +105,36 @@ class NodeTest {
         assertThat(e).hasStackTraceContaining("requested lease not found");
       }
     }
+  }
+
+  @Test
+  public void testLargerCluster() throws Exception {
+    int clusterSize = 100;
+    List<Node> cluster = Stream.generate(() -> {
+      try {
+        return new Node(getClientEndpoints());
+      } catch (Exception e) {
+        return null;
+      }
+    }).limit(clusterSize).collect(Collectors.toList());
+    assertThat(cluster).hasSize(clusterSize);
+    try {
+      for (Node node : cluster) {
+        node.join();
+      }
+
+      Awaitility.await("Node 1 to see all other nodes")
+          .until(() -> cluster.get(0).getClusterMembers().size() == clusterSize);
+    } finally {
+      for (Node node : cluster) {
+        try {
+          node.close();
+        } catch (Exception e) {
+          // doesn't matter
+        }
+      }
+    }
+
   }
 
 }
