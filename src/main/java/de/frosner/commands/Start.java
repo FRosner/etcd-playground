@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 
+// St
 @CommandLine.Command(
     name = "start",
     mixinStandardHelpOptions = true,
@@ -34,6 +35,8 @@ public class Start implements Runnable {
   public void run() {
     try (Node node = new Node(Arrays.asList(endpoints))) {
       node.join();
+      // TODO capture sigint and leave
+      Thread.currentThread().join();
     } catch (JoinFailedException e) {
       logger.error("Failed to start node.", e);
     } catch (LeaveFailedException e) {

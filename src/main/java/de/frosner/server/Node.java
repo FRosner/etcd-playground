@@ -82,7 +82,7 @@ public class Node implements AutoCloseable {
         ByteSequence.from(NODES_PREFIX, StandardCharsets.UTF_8),
         WatchOption.newBuilder()
             .withPrefix(ByteSequence.from(NODES_PREFIX, StandardCharsets.UTF_8))
-            .withRevision(fromRevision)
+            .withRevision(fromRevision) // TODO watch from revision + 1
             .build(),
         watchResponse -> {
           // TODO handle watch response on separate executor to not block grpc-default-executor
