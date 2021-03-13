@@ -36,8 +36,8 @@ class NodeTest {
   private static final GenericContainer<?> etcd =
       new GenericContainer<>(EtcdContainer.ETCD_DOCKER_IMAGE_NAME)
           .withCommand("etcd",
-              "-listen-client-urls", "http://0.0.0.0:2379",
-              "--advertise-client-urls", "http://0.0.0.0:2379",
+              "-listen-client-urls", "http://0.0.0.0:" + ETCD_PORT,
+              "--advertise-client-urls", "http://0.0.0.0:" + ETCD_PORT,
               "--name", NodeTest.class.getSimpleName())
           .withExposedPorts(ETCD_PORT)
           .withNetwork(network);
